@@ -206,15 +206,87 @@ unsafe {
     // if !codec_found {
     //     panic!("Could not enumerate the H264 codec");
     // }
+    let mut enc_preset_config = enc::NV_ENC_PRESET_CONFIG {
+        version: nvenc_struct_version(4) | (1<<31),
+        presetCfg: enc::NV_ENC_CONFIG {
+            version: nvenc_struct_version(6) | (1<<31),
+            profileGUID: todo!(),
+            gopLength: todo!(),
+            frameIntervalP: todo!(),
+            monoChromeEncoding: 0,
+            frameFieldMode: todo!(),
+            mvPrecision: todo!(),
+            rcParams: enc::NV_ENC_RC_PARAMS {
+                version: todo!(),
+                rateControlMode: todo!(),
+                constQP: todo!(),
+                averageBitRate: todo!(),
+                maxBitRate: todo!(),
+                vbvBufferSize: todo!(),
+                vbvInitialDelay: todo!(),
+                _bitfield_align_1: todo!(),
+                _bitfield_1: todo!(),
+                minQP: todo!(),
+                maxQP: todo!(),
+                initialRCQP: todo!(),
+                temporallayerIdxMask: todo!(),
+                temporalLayerQP: todo!(),
+                targetQuality: todo!(),
+                targetQualityLSB: todo!(),
+                lookaheadDepth: todo!(),
+                lowDelayKeyFrameScale: todo!(),
+                yDcQPIndexOffset: todo!(),
+                uDcQPIndexOffset: todo!(),
+                vDcQPIndexOffset: todo!(),
+                qpMapMode: todo!(),
+                multiPass: todo!(),
+                alphaLayerBitrateRatio: todo!(),
+                cbQPIndexOffset: todo!(),
+                crQPIndexOffset: todo!(),
+                reserved2: 0,
+                reserved: [0; 4],
+            },
+            encodeCodecConfig: enc::NV_ENC_CODEC_CONFIG {
+                h264Config: enc::NV_ENC_CONFIG_H264 {
+                    _bitfield_align_1: todo!(),
+                    _bitfield_1: todo!(),
+                    level: todo!(),
+                    idrPeriod: todo!(),
+                    separateColourPlaneFlag: todo!(),
+                    disableDeblockingFilterIDC: todo!(),
+                    numTemporalLayers: todo!(),
+                    spsId: todo!(),
+                    ppsId: todo!(),
+                    adaptiveTransformMode: todo!(),
+                    fmoMode: todo!(),
+                    bdirectMode: todo!(),
+                    entropyCodingMode: todo!(),
+                    stereoMode: todo!(),
+                    intraRefreshPeriod: todo!(),
+                    intraRefreshCnt: todo!(),
+                    maxNumRefFrames: todo!(),
+                    sliceMode: todo!(),
+                    sliceModeData: todo!(),
+                    h264VUIParameters: todo!(),
+                    ltrNumFrames: todo!(),
+                    ltrTrustMode: todo!(),
+                    chromaFormatIDC: todo!(),
+                    maxTemporalLayers: todo!(),
+                    useBFramesAsRef: todo!(),
+                    numRefL0: todo!(),
+                    numRefL1: todo!(),
 
-    let mut enc_preset_config = std::mem::zeroed::<enc::NV_ENC_PRESET_CONFIG>(); // fails
-    enc_preset_config.version = nvenc_struct_version(4) | (1<<31);
-    enc_preset_config.presetCfg.version = nvenc_struct_version(6) | (1<<31);
-
-
-
-
-
+                    reserved1: [0; 267],
+                    reserved2: [std::ptr::null_mut(); 64],
+                }
+            },
+            reserved: [0; 278],
+            reserved2: [std::ptr::null_mut(); 64],
+        },
+        reserved1: [0; 255],
+        reserved2: [std::ptr::null_mut(); 64],
+    };
+    
     enc_status = enc_fn.nvEncGetEncodePresetConfig.unwrap()(encoder, codec_h264, preset_low_latency, &mut enc_preset_config);
     if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
         panic!("Failed to obtain encoder preset settings. Status = {}", enc_status as u32);
