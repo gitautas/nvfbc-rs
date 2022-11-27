@@ -39,4 +39,13 @@ fn main() {
     nv_enc
         .write_to_file("src/bindings/nv_enc.rs")
         .expect("Couldn't write NvEnc bindings.");
+
+    println!("cargo:rerun-if-changed=external/stdio_wrapper.h");
+    bindgen::Builder::default()
+        .header("external/stdio_wrapper.h")
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .generate()
+        .expect("Unable to generate bindings for stdio")
+        .write_to_file("src/bindings/stdio.rs")
+        .expect("Couldn't write stdio bindings!");
 }

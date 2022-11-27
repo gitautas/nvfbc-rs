@@ -6,7 +6,7 @@
 mod fbc {include!("./bindings/nv_fbc.rs");}
 mod enc {include!("./bindings/nv_enc.rs");}
 mod cuda {include!("./bindings/cuda.rs");}
-
+mod stdio {include!("./bindings/stdio.rs");}
 
 extern crate libloading;
 use libloading::Library;
@@ -42,7 +42,7 @@ unsafe {
     if cu_res != cuda::cudaError_enum::CUDA_SUCCESS {
         panic!("Unable to create CUDA context. Result: {}", cu_res as u32);
     }
-
+    
     /*
      * Create an NvFBC instance.
      *
@@ -162,11 +162,12 @@ unsafe {
      * Validate the codec.
      */
 
+     //{ 0x6bc82762, 0x4e63, 0x4ca4, { 0xaa, 0x85, 0x1e, 0x50, 0xf3, 0x21, 0xf6, 0xbf } };
     const codec_h264: enc::_GUID = enc::_GUID {
         Data1: 0x6bc82762,
         Data2: 0x4e63,
-        Data3: 0x4d7b,
-        Data4: [0x94, 0x25, 0xbd, 0xa9, 0x97, 0x5f, 0x76, 0x3]
+        Data3: 0x4ca4,
+        Data4: [0xaa, 0x85, 0x1e, 0x50, 0xf3, 0x21, 0xf6, 0xbf ]
     };
 
     const preset_low_latency: enc::_GUID = enc::_GUID {
@@ -206,86 +207,13 @@ unsafe {
     // if !codec_found {
     //     panic!("Could not enumerate the H264 codec");
     // }
-    let mut enc_preset_config = enc::NV_ENC_PRESET_CONFIG {
-        version: nvenc_struct_version(4) | (1<<31),
-        presetCfg: enc::NV_ENC_CONFIG {
-            version: nvenc_struct_version(6) | (1<<31),
-            profileGUID: todo!(),
-            gopLength: todo!(),
-            frameIntervalP: todo!(),
-            monoChromeEncoding: 0,
-            frameFieldMode: todo!(),
-            mvPrecision: todo!(),
-            rcParams: enc::NV_ENC_RC_PARAMS {
-                version: todo!(),
-                rateControlMode: todo!(),
-                constQP: todo!(),
-                averageBitRate: todo!(),
-                maxBitRate: todo!(),
-                vbvBufferSize: todo!(),
-                vbvInitialDelay: todo!(),
-                _bitfield_align_1: todo!(),
-                _bitfield_1: todo!(),
-                minQP: todo!(),
-                maxQP: todo!(),
-                initialRCQP: todo!(),
-                temporallayerIdxMask: todo!(),
-                temporalLayerQP: todo!(),
-                targetQuality: todo!(),
-                targetQualityLSB: todo!(),
-                lookaheadDepth: todo!(),
-                lowDelayKeyFrameScale: todo!(),
-                yDcQPIndexOffset: todo!(),
-                uDcQPIndexOffset: todo!(),
-                vDcQPIndexOffset: todo!(),
-                qpMapMode: todo!(),
-                multiPass: todo!(),
-                alphaLayerBitrateRatio: todo!(),
-                cbQPIndexOffset: todo!(),
-                crQPIndexOffset: todo!(),
-                reserved2: 0,
-                reserved: [0; 4],
-            },
-            encodeCodecConfig: enc::NV_ENC_CODEC_CONFIG {
-                h264Config: enc::NV_ENC_CONFIG_H264 {
-                    _bitfield_align_1: todo!(),
-                    _bitfield_1: todo!(),
-                    level: todo!(),
-                    idrPeriod: todo!(),
-                    separateColourPlaneFlag: todo!(),
-                    disableDeblockingFilterIDC: todo!(),
-                    numTemporalLayers: todo!(),
-                    spsId: todo!(),
-                    ppsId: todo!(),
-                    adaptiveTransformMode: todo!(),
-                    fmoMode: todo!(),
-                    bdirectMode: todo!(),
-                    entropyCodingMode: todo!(),
-                    stereoMode: todo!(),
-                    intraRefreshPeriod: todo!(),
-                    intraRefreshCnt: todo!(),
-                    maxNumRefFrames: todo!(),
-                    sliceMode: todo!(),
-                    sliceModeData: todo!(),
-                    h264VUIParameters: todo!(),
-                    ltrNumFrames: todo!(),
-                    ltrTrustMode: todo!(),
-                    chromaFormatIDC: todo!(),
-                    maxTemporalLayers: todo!(),
-                    useBFramesAsRef: todo!(),
-                    numRefL0: todo!(),
-                    numRefL1: todo!(),
 
-                    reserved1: [0; 267],
-                    reserved2: [std::ptr::null_mut(); 64],
-                }
-            },
-            reserved: [0; 278],
-            reserved2: [std::ptr::null_mut(); 64],
-        },
-        reserved1: [0; 255],
-        reserved2: [std::ptr::null_mut(); 64],
-    };
+    /*
+     * Initialize the encoder preset configuration.
+     */
+    let mut enc_preset_config = std::mem::MaybeUninit::<enc::NV_ENC_PRESET_CONFIG>::zeroed().assume_init();
+    enc_preset_config.version = nvenc_struct_version(4) | (1<<31);
+    enc_preset_config.presetCfg.version = nvenc_struct_version(6) | (1<<31);
     
     enc_status = enc_fn.nvEncGetEncodePresetConfig.unwrap()(encoder, codec_h264, preset_low_latency, &mut enc_preset_config);
     if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
@@ -296,15 +224,177 @@ unsafe {
     enc_preset_config.presetCfg.rcParams.maxBitRate = 8 * 1024 * 1024;
 
     /*
+     * Initialize the encoder.
+     */
+    let mut enc_init_params = std::mem::MaybeUninit::<enc::NV_ENC_INITIALIZE_PARAMS>::zeroed().assume_init();
+    
+    enc_init_params.version = nvenc_struct_version(5) | ( 1<<31 );
+    enc_init_params.encodeGUID = codec_h264;
+    enc_init_params.presetGUID = preset_low_latency;
+    enc_init_params.encodeConfig = &mut enc_preset_config.presetCfg;
+    enc_init_params.encodeWidth = frame_size.w;
+    enc_init_params.encodeHeight = frame_size.h;
+    enc_init_params.frameRateNum = 100;
+    enc_init_params.frameRateDen = 1;
+    enc_init_params.enablePTD = 1; // This feature causes a lot of latency from my experience
+
+    enc_status = enc_fn.nvEncInitializeEncoder.unwrap()(encoder, &mut enc_init_params);
+    if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+        panic!("Failed to initialize the encode session. Status = {}", enc_status as u32);
+    }
+
+    /*
+     * Create a buffer to hold the frame.
+     */
+    // let mut cu_dev_ptr = nv_cuda.cuDevice
+
+    let mut pitch = frame_size.w as usize;
+
+    let mut buffer = std::mem::MaybeUninit::<cuda::CUdeviceptr>::zeroed().assume_init();
+
+    cu_res = nv_cuda.cuMemAllocPitch_v2(&mut buffer, &mut 0 , frame_size.w as usize,
+         frame_size.h as usize, 16);
+    if cu_res != cuda::cudaError_enum::CUDA_SUCCESS {
+        panic!("Unable to initialize CUDA buffer. Result: {}", cu_res as u32);
+    }
+
+    let mut enc_input_buffer_params = std::mem::MaybeUninit::<enc::NV_ENC_CREATE_INPUT_BUFFER>::zeroed().assume_init();
+    enc_input_buffer_params.version = nvenc_struct_version(1);
+    enc_input_buffer_params.width = frame_size.w;
+    enc_input_buffer_params.height = frame_size.h;
+    enc_input_buffer_params.bufferFmt = enc::NV_ENC_BUFFER_FORMAT::NV_ENC_BUFFER_FORMAT_NV12;
+
+    enc_status = enc_fn.nvEncCreateInputBuffer.unwrap()(encoder, &mut enc_input_buffer_params);
+
+    /*
+     * Register the frames received from NvFBC for use with NvEncodeAPI.
+     */
+
+    let mut enc_register_params = std::mem::MaybeUninit::<enc::NV_ENC_REGISTER_RESOURCE>::zeroed().assume_init();
+    enc_register_params.version = nvenc_struct_version(3);
+    enc_register_params.resourceType = enc::NV_ENC_INPUT_RESOURCE_TYPE::NV_ENC_INPUT_RESOURCE_TYPE_CUDADEVICEPTR;
+    enc_register_params.resourceToRegister = buffer as *mut std::ffi::c_void;
+    enc_register_params.width = frame_size.w;
+    enc_register_params.height = frame_size.h;
+    enc_register_params.pitch = 0;
+    enc_register_params.bufferFormat = enc::NV_ENC_BUFFER_FORMAT::NV_ENC_BUFFER_FORMAT_NV12;
+
+    enc_status = enc_fn.nvEncRegisterResource.unwrap()(encoder, &mut enc_register_params);
+    if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+        panic!("Failed to initialize the CUDA device encoder resource. Status = {}", enc_status as u32);
+    }
+
+    /*
+     * Create a bitstream buffer to hold the output
+     */
+    let mut enc_bitstream_buffer_params = std::mem::MaybeUninit::<enc::NV_ENC_CREATE_BITSTREAM_BUFFER>::zeroed().assume_init();
+    enc_bitstream_buffer_params.version = nvenc_struct_version(1);
+
+    enc_status = enc_fn.nvEncCreateBitstreamBuffer.unwrap()(encoder, &mut enc_bitstream_buffer_params);
+    if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+        panic!("Failed to create a bitstream buffer. Status = {}", enc_status as u32);
+    }
+
+    let mut enc_output_buffer = enc_bitstream_buffer_params.bitstreamBuffer;
+
+    // let mut file = File::create("out.h264").unwrap();
+    let mut file = stdio::fopen("".as_ptr() as *const i8, "wb".as_ptr() as *const i8);
+
+    /*
+     * Pre-fill mapping information
+     */
+    let mut enc_map_params = std::mem::MaybeUninit::<enc::NV_ENC_MAP_INPUT_RESOURCE>::zeroed().assume_init();
+    enc_map_params.version = nvenc_struct_version(4);
+
+    let mut enc_params = std::mem::MaybeUninit::<enc::NV_ENC_PIC_PARAMS>::zeroed().assume_init();
+    enc_params.version = nvenc_struct_version(4) | ( 1<<31 );
+    enc_params.inputWidth = frame_size.w;
+    enc_params.inputHeight = frame_size.h;
+    enc_params.inputPitch = frame_size.w;
+    enc_params.pictureStruct = enc::NV_ENC_PIC_STRUCT::NV_ENC_PIC_STRUCT_FRAME;
+    enc_params.outputBitstream = enc_output_buffer;
+
+    /*
      * We are now ready to start grabbing frames.
      */
-    // let cu_dev_ptr: cuda::CUdeviceptr;
-    // let &mut frame
-    // loop {
+    let mut index = 0;
+    loop {
+        let mut fbc_grab_params = std::mem::MaybeUninit::<fbc::NVFBC_TOCUDA_GRAB_FRAME_PARAMS>::zeroed().assume_init();
+        let mut fbc_frame_info = std::mem::MaybeUninit::<fbc::NVFBC_FRAME_GRAB_INFO>::zeroed().assume_init();
+    
+        fbc_grab_params.dwVersion = nvfbc_struct_version::<fbc::NVFBC_TOCUDA_GRAB_FRAME_PARAMS>(2);
+        fbc_grab_params.dwFlags = fbc::NVFBC_TOCUDA_FLAGS::NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT_IF_NEW_FRAME_READY as u32;
+        fbc_grab_params.pFrameGrabInfo = &mut fbc_frame_info;
+        fbc_grab_params.pCUDADeviceBuffer = buffer as *mut std::ffi::c_void;
+    
+        /*
+         * Capture a frame.
+         */
+        fbc_status = cap_fn.nvFBCToCudaGrabFrame.unwrap()(fbc_handle, &mut fbc_grab_params);
+        if fbc_status == fbc::NVFBCSTATUS::NVFBC_ERR_MUST_RECREATE {
+            println!("Capture session must be recreated!");
+            break;
+        } else if fbc_status != fbc::NVFBCSTATUS::NVFBC_SUCCESS {
+            let error = std::ffi::CStr::from_ptr(cap_fn.nvFBCGetLastErrorStr.unwrap()(fbc_handle)).to_str().unwrap();
+            panic!("{}", error);
+        }
 
+        /*
+         * Map the frame for use by the encoder.
+         */
+        enc_map_params.registeredResource = enc_register_params.registeredResource;
 
+        enc_status = enc_fn.nvEncMapInputResource.unwrap()(encoder, &mut enc_map_params);
+        if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+            panic!("Failed to map resource. Status: {}", enc_status as u32); // this is might cause memory leaks and other nasty problems *shrugs*
+        }
 
-    // }
+        let mut input_buffer = enc_map_params.mappedResource;
+        enc_params.inputBuffer = input_buffer;
+        enc_params.bufferFmt = enc_map_params.mappedBufferFmt;
+
+        enc_params.inputTimeStamp = index;
+        enc_params.frameIdx = index as u32;
+
+        /*
+         * Encode the frame.
+         */
+        enc_status = enc_fn.nvEncEncodePicture.unwrap()(encoder, &mut enc_params);
+        if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+            println!("Failed to encode frame. Status: {}", enc_status as u32);
+        } else {
+            let mut enc_lock_params = std::mem::MaybeUninit::<enc::NV_ENC_LOCK_BITSTREAM>::zeroed().assume_init();
+            enc_lock_params.version = nvenc_struct_version(1);
+            enc_lock_params.outputBitstream = enc_output_buffer;
+
+            enc_status = enc_fn.nvEncLockBitstream.unwrap()(encoder, &mut enc_lock_params);
+            if enc_status == enc::NVENCSTATUS::NV_ENC_SUCCESS {
+                let buffer_size = enc_lock_params.bitstreamSizeInBytes;
+                if buffer_size == 0 {
+                    panic!("Failed to obtain bitstream buffer.");
+                }
+        
+                stdio::fwrite(enc_lock_params.bitstreamBufferPtr, 1, buffer_size as u64, file);
+
+                enc_status = enc_fn.nvEncUnlockBitstream.unwrap()(encoder, enc_output_buffer);
+                if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+                    println!("Failed to unlock bitstream buffer. Status: {}", enc_status as u32);
+                } else {
+                    println!("Failed to lock bitstream buffer. Status: {}", enc_status as u32);
+                }
+            }
+        }
+
+        /*
+         * Unmap the frame.
+         */
+        enc_status = enc_fn.nvEncUnmapInputResource.unwrap()(encoder, input_buffer);
+        if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+            panic!("Failed to unmap input resource. Status: {}", enc_status as u32);
+        }
+
+        index = index.wrapping_add(1);
+    }
 
     println!("I ran succesfully tf???");
 }
