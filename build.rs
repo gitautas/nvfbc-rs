@@ -11,7 +11,7 @@ fn main() {
         .expect("Unable to generate bindings for NvFBC");
 
     let nv_enc = bindgen::Builder::default()
-        .header("external/NvEncodeAPI.h")
+        .header("external/nvEncodeAPI.h")
         .dynamic_library_name("NvEnc")
         // .dynamic_link_require_all(true)
         .default_enum_style(bindgen::EnumVariation::Rust {non_exhaustive: false})

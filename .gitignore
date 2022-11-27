@@ -1,5 +1,5 @@
 /target
 external/NvFBC.h
-external/NvEncodeAPI.h
+external/nvEncodeAPI.h
 src/bindings/nv_fbc.rs
 src/bindings/nv_enc.rs
