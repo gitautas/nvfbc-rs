@@ -1,5 +1,10 @@
 /target
+!external
 external/NvFBC.h
 external/nvEncodeAPI.h
+external/cuda.h
+!src/bindings
 src/bindings/nv_fbc.rs
 src/bindings/nv_enc.rs
+src/bindings/cuda.rs
+

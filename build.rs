@@ -19,6 +19,19 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings for NvEnc");
 
+    let cuda = bindgen::Builder::default()
+        .header("external/cuda.h")
+        .dynamic_library_name("cuda")
+        // .dynamic_link_require_all(true)
+        .default_enum_style(bindgen::EnumVariation::Rust {non_exhaustive: false})
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .generate()
+        .expect("Unable to generate bindings for cuda");
+
+    cuda
+        .write_to_file("src/bindings/cuda.rs")
+        .expect("Couldn't write cuda bindings.");
+
     nv_fbc
         .write_to_file("src/bindings/nv_fbc.rs")
         .expect("Couldn't write NvFBC bindings.");
