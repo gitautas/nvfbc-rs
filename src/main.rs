@@ -151,7 +151,7 @@ unsafe {
     enc_session_params.deviceType = enc::NV_ENC_DEVICE_TYPE::NV_ENC_DEVICE_TYPE_CUDA;
     enc_session_params.device = cu_ctx as *mut std::ffi::c_void;
 
-    let mut encoder = std::mem::zeroed::<*mut std::ffi::c_void>();
+    let mut encoder = std::ptr::null_mut();
 
     enc_status = enc_fn.nvEncOpenEncodeSessionEx.unwrap()(&mut enc_session_params, &mut encoder);
     if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
@@ -252,12 +252,6 @@ unsafe {
 
     let mut buffer = std::mem::MaybeUninit::<cuda::CUdeviceptr>::zeroed().assume_init();
 
-    cu_res = nv_cuda.cuMemAllocPitch_v2(&mut buffer, &mut 0 , frame_size.w as usize,
-         frame_size.h as usize, 16);
-    if cu_res != cuda::cudaError_enum::CUDA_SUCCESS {
-        panic!("Unable to initialize CUDA buffer. Result: {}", cu_res as u32);
-    }
-
     let mut enc_input_buffer_params = std::mem::MaybeUninit::<enc::NV_ENC_CREATE_INPUT_BUFFER>::zeroed().assume_init();
     enc_input_buffer_params.version = nvenc_struct_version(1);
     enc_input_buffer_params.width = frame_size.w;
@@ -269,6 +263,12 @@ unsafe {
     /*
      * Register the frames received from NvFBC for use with NvEncodeAPI.
      */
+
+    cu_res = nv_cuda.cuMemAllocPitch_v2(&mut buffer, &mut 3440, frame_size.w as usize,
+        frame_size.h as usize, 16);
+    if cu_res != cuda::cudaError_enum::CUDA_SUCCESS {
+        panic!("Unable to initialize CUDA buffer. Result: {}", cu_res as u32);
+    }
 
     let mut enc_register_params = std::mem::MaybeUninit::<enc::NV_ENC_REGISTER_RESOURCE>::zeroed().assume_init();
     enc_register_params.version = nvenc_struct_version(3);
@@ -298,7 +298,7 @@ unsafe {
     let mut enc_output_buffer = enc_bitstream_buffer_params.bitstreamBuffer;
 
     // let mut file = File::create("out.h264").unwrap();
-    let mut file = stdio::fopen("".as_ptr() as *const i8, "wb".as_ptr() as *const i8);
+    let mut file = stdio::fopen(std::ffi::CString::new("out.h264").unwrap().as_ptr(), std::ffi::CString::new("wb").unwrap().as_ptr());
 
     /*
      * Pre-fill mapping information
@@ -323,9 +323,11 @@ unsafe {
         let mut fbc_frame_info = std::mem::MaybeUninit::<fbc::NVFBC_FRAME_GRAB_INFO>::zeroed().assume_init();
     
         fbc_grab_params.dwVersion = nvfbc_struct_version::<fbc::NVFBC_TOCUDA_GRAB_FRAME_PARAMS>(2);
-        fbc_grab_params.dwFlags = fbc::NVFBC_TOCUDA_FLAGS::NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT_IF_NEW_FRAME_READY as u32;
+        fbc_grab_params.dwFlags = fbc::NVFBC_TOCUDA_FLAGS::NVFBC_TOCUDA_GRAB_FLAGS_NOFLAGS as u32;
         fbc_grab_params.pFrameGrabInfo = &mut fbc_frame_info;
-        fbc_grab_params.pCUDADeviceBuffer = buffer as *mut std::ffi::c_void;
+        // fbc_grab_params.pCUDADeviceBuffer = std::ptr::addr_of_mut!(buffer) as *mut std::ffi::c_void;
+        fbc_grab_params.pCUDADeviceBuffer = &mut buffer as *mut _ as *mut std::ffi::c_void;
+        fbc_grab_params.dwTimeoutMs = 0;
     
         /*
          * Capture a frame.
@@ -379,9 +381,9 @@ unsafe {
                 enc_status = enc_fn.nvEncUnlockBitstream.unwrap()(encoder, enc_output_buffer);
                 if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
                     println!("Failed to unlock bitstream buffer. Status: {}", enc_status as u32);
-                } else {
-                    println!("Failed to lock bitstream buffer. Status: {}", enc_status as u32);
-                }
+                }    
+            } else {
+                println!("Failed to lock bitstream buffer. Status: {}", enc_status as u32);
             }
         }
 
@@ -394,6 +396,28 @@ unsafe {
         }
 
         index = index.wrapping_add(1);
+        if index == 500 {
+            enc_params.version = nvenc_struct_version(4) | ( 1<<31 );
+            enc_params.encodePicFlags = enc::NV_ENC_PIC_FLAGS::NV_ENC_PIC_FLAG_EOS as u32;
+
+            enc_status = enc_fn.nvEncEncodePicture.unwrap()(encoder, &mut enc_params);
+            if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+                println!("Failed to flush the encoder. Status: {}", enc_status as u32);
+            }  
+
+            enc_status = enc_fn.nvEncDestroyBitstreamBuffer.unwrap()(encoder, enc_output_buffer);
+            if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+                println!("Failed to destroy output buffer. Status: {}", enc_status as u32);
+            }
+
+            stdio::fclose(file);
+
+            enc_status = enc_fn.nvEncDestroyEncoder.unwrap()(encoder);
+            if enc_status != enc::NVENCSTATUS::NV_ENC_SUCCESS {
+                println!("Failed to destroy encoder. Status: {}", enc_status as u32);
+            }
+            break;
+        }
     }
 
     println!("I ran succesfully tf???");
